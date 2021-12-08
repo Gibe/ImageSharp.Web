@@ -288,116 +288,97 @@ namespace SixLabors.ImageSharp.Web.Middleware
             }
 
             // Not cached, or is updated? Let's get it from the image resolver.
-            ImageMetadata sourceImageMetadata = readResult.SourceImageMetadata;
+            ImageMetadata sourceMeta = readResult.SourceImageMetadata;
 
             // Enter an asynchronous write worker which prevents multiple writes and delays any reads for the same request.
-            // This reduces the overheads of unnecessary processing.
+            // This reduces the overheads of unnecessary processing and potential file locks.
+            RecyclableMemoryStream outStream = null;
             try
             {
                 ImageWorkerResult writeResult = await WriteWorkers.GetOrAddAsync(
-                    key,
-                    async (key) =>
-                    {
-                        RecyclableMemoryStream outStream = null;
-                        try
-                        {
-                            // Prevent a second request from starting a read during write execution.
-                            if (ReadWorkers.TryGetValue(key, out Task<ImageWorkerResult> readWork))
-                            {
-                                await readWork;
-                            }
+                          key,
+                          async (key) =>
+                          {
+                              try
+                              {
+                                  // Prevent a second request from starting a read during write execution.
+                                  if (ReadWorkers.TryGetValue(key, out Task<ImageWorkerResult> readWork))
+                                  {
+                                      await readWork;
+                                  }
 
-                            ImageCacheMetadata cachedImageMetadata = default;
-                            outStream = new RecyclableMemoryStream(this.options.MemoryStreamManager);
-                            IImageFormat format;
+                                  ImageCacheMetadata cacheMeta = default;
+                                  RecyclableMemoryStreamManager memoryStreamManager = this.options.MemoryStreamManager;
+                                  outStream = new RecyclableMemoryStream(memoryStreamManager);
+                                  IImageFormat format;
 
-                            // 14.9.3 CacheControl Max-Age
-                            // Check to see if the source metadata has a CacheControl Max-Age value
-                            // and use it to override the default max age from our options.
-                            TimeSpan maxAge = this.options.BrowserMaxAge;
-                            if (!sourceImageMetadata.CacheControlMaxAge.Equals(TimeSpan.MinValue))
-                            {
-                                maxAge = sourceImageMetadata.CacheControlMaxAge;
-                            }
+                                  // 14.9.3 CacheControl Max-Age
+                                  // Check to see if the source metadata has a CacheControl Max-Age value
+                                  // and use it to override the default max age from our options.
+                                  TimeSpan maxAge = this.options.BrowserMaxAge;
+                                  if (!sourceMeta.CacheControlMaxAge.Equals(TimeSpan.MinValue))
+                                  {
+                                      maxAge = sourceMeta.CacheControlMaxAge;
+                                  }
 
-                            using (Stream inStream = await sourceImageResolver.OpenReadAsync())
-                            {
-                                // No commands? We simply copy the stream across.
-                                if (commands.Count == 0)
-                                {
-                                    await inStream.CopyToAsync(outStream);
-                                    outStream.Position = 0;
-                                    format = await Image.DetectFormatAsync(this.options.Configuration, outStream);
-                                }
-                                else
-                                {
-                                    using var image = FormattedImage.Load(this.options.Configuration, inStream);
+                                  using (Stream inStream = await sourceImageResolver.OpenReadAsync())
+                                  {
+                                      // No commands? We simply copy the stream across.
+                                      if (commands.Count == 0)
+                                      {
+                                          await inStream.CopyToAsync(outStream);
+                                          outStream.Position = 0;
+                                          format = await Image.DetectFormatAsync(this.options.Configuration, outStream);
+                                      }
+                                      else
+                                      {
+                                          using var image = FormattedImage.Load(this.options.Configuration, inStream);
 
-                                    image.Process(
-                                        this.logger,
-                                        this.processors,
-                                        commands,
-                                        this.commandParser,
-                                        this.parserCulture);
+                                          image.Process(
+                                              this.logger,
+                                              this.processors,
+                                              commands,
+                                              this.commandParser,
+                                              this.parserCulture);
 
-                                    await this.options.OnBeforeSaveAsync.Invoke(image);
+                                          await this.options.OnBeforeSaveAsync.Invoke(image);
 
-                                    image.Save(outStream);
-                                    format = image.Format;
-                                }
-                            }
+                                          image.Save(outStream);
+                                          format = image.Format;
+                                      }
+                                  }
 
-                            // Allow for any further optimization of the image.
-                            outStream.Position = 0;
-                            string contentType = format.DefaultMimeType;
-                            string extension = this.formatUtilities.GetExtensionFromContentType(contentType);
-                            await this.options.OnProcessedAsync.Invoke(new ImageProcessingContext(context, outStream, commands, contentType, extension));
-                            outStream.Position = 0;
+                                  // Allow for any further optimization of the image.
+                                  outStream.Position = 0;
+                                  string contentType = format.DefaultMimeType;
+                                  string extension = this.formatUtilities.GetExtensionFromContentType(contentType);
+                                  await this.options.OnProcessedAsync.Invoke(new ImageProcessingContext(context, outStream, commands, contentType, extension));
+                                  outStream.Position = 0;
 
-                            cachedImageMetadata = new ImageCacheMetadata(
-                                sourceImageMetadata.LastWriteTimeUtc,
-                                DateTime.UtcNow,
-                                contentType,
-                                maxAge,
-                                outStream.Length);
+                                  // Save the image to the cache
+                                  cacheMeta = new ImageCacheMetadata(
+                                            sourceMeta.LastWriteTimeUtc,
+                                            DateTime.UtcNow,
+                                            contentType,
+                                            maxAge,
+                                            outStream.Length);
 
-                            // Save the image to the cache and send the response to the caller.
-                            await this.cache.SetAsync(key, outStream, cachedImageMetadata);
+                                  await this.cache.SetAsync(key, outStream, cacheMeta);
+                                  outStream.Position = 0;
 
-                            // Remove any resolver from the cache so we always resolve next request
-                            // for the same key.
-                            CacheResolverLru.TryRemove(key);
-
-                            // Place the resolver in the lru cache.
-                            (IImageCacheResolver ImageCacheResolver, ImageCacheMetadata ImageCacheMetadata) cachedImage = await
-                                CacheResolverLru.GetOrAddAsync(
-                                    key,
-                                    async k =>
-                                    {
-                                        IImageCacheResolver resolver = await this.cache.GetAsync(k);
-                                        ImageCacheMetadata metadata = default;
-                                        if (resolver != null)
-                                        {
-                                            metadata = await resolver.GetMetaDataAsync();
-                                        }
-
-                                        return (resolver, metadata);
-                                    });
-
-                            return new ImageWorkerResult(cachedImage.ImageCacheMetadata, cachedImage.ImageCacheResolver);
-                        }
-                        catch (Exception ex)
-                        {
-                            // Log the error internally then rethrow.
-                            // We don't call next here, the pipeline will automatically handle it
-                            this.logger.LogImageProcessingFailed(imageContext.GetDisplayUrl(), ex);
-                            throw;
-                        }
-                        finally
-                        {
-                            await this.StreamDisposeAsync(outStream);
-                        }
-                    });
+                                  // Send the response to the caller
+                                  PassThroughCacheResolver resolver = new(cacheMeta, outStream, memoryStreamManager);
+                                  await this.SendResponseAsync(imageContext, key, cacheMeta, resolver);
+                                  return new ImageWorkerResult(cacheMeta, resolver);
+                              }
+                              catch (Exception ex)
+                              {
+                                  // Log the error internally then rethrow.
+                                  // We don't call next here, the pipeline will automatically handle it
+                                  this.logger.LogImageProcessingFailed(imageContext.GetDisplayUrl(), ex);
+                                  throw;
+                              }
+                          });
 
                 await this.SendResponseAsync(imageContext, key, writeResult.CacheImageMetadata, writeResult.Resolver);
             }
@@ -405,7 +386,10 @@ namespace SixLabors.ImageSharp.Web.Middleware
             {
                 // As soon as we have sent a response from a writer the result is available from a reader so we remove this task.
                 // Any existing awaiters will continue to await.
-                WriteWorkers.TryRemove(key, out Task<ImageWorkerResult> _);
+                if (WriteWorkers.TryRemove(key, out Task<ImageWorkerResult> _))
+                {
+                    await this.StreamDisposeAsync(outStream);
+                }
             }
         }
 
@@ -431,74 +415,54 @@ namespace SixLabors.ImageSharp.Web.Middleware
 #endif
         }
 
-        private async Task<ImageWorkerResult> IsNewOrUpdatedAsync(
+        private Task<ImageWorkerResult> IsNewOrUpdatedAsync(
             IImageResolver sourceImageResolver,
             string key)
         {
             // Pause until the write has been completed.
             if (WriteWorkers.TryGetValue(key, out Task<ImageWorkerResult> writeWorkResult))
             {
-                return await writeWorkResult;
+                return writeWorkResult;
             }
 
-            return await ReadWorkers.GetOrAddAsync(
+            return ReadWorkers.GetOrAddAsync(
                 key,
                 async (key) =>
+                {
+                    // Get the source metadata for processing, storing the result for future checks.
+                    ImageMetadata sourceMeta = await sourceImageResolver.GetMetaDataAsync();
+
+                    // Check to see if the cache contains this image.
+                    // If not, we return early. No further checks necessary.
+                    IImageCacheResolver cacheResolver = await this.cache.GetAsync(key);
+                    if (cacheResolver is null)
                     {
-                        // Get the source metadata for processing, storing the result for future checks.
-                        ImageMetadata sourceImageMetadata = await
-                            SourceMetadataLru.GetOrAddAsync(
-                                key,
-                                _ => sourceImageResolver.GetMetaDataAsync());
+                        return new ImageWorkerResult(sourceMeta);
+                    }
 
-                        // Check to see if the cache contains this image.
-                        // If not, we return early. No further checks necessary.
-                        (IImageCacheResolver ImageCacheResolver, ImageCacheMetadata ImageCacheMetadata) cachedImage = await
-                            CacheResolverLru.GetOrAddAsync(
-                                key,
-                                async k =>
-                                {
-                                    IImageCacheResolver resolver = await this.cache.GetAsync(k);
-                                    ImageCacheMetadata metadata = default;
-                                    if (resolver != null)
-                                    {
-                                        metadata = await resolver.GetMetaDataAsync();
-                                    }
+                    ImageCacheMetadata cacheMeta = await cacheResolver.GetMetaDataAsync();
 
-                                    return (resolver, metadata);
-                                });
+                    // Has the cached image expired?
+                    // Or has the source image changed since the image was last cached?
+                    if (cacheMeta.ContentLength == 0 // Fix for old cache without length property
+                        || cacheMeta.CacheLastWriteTimeUtc <= (DateTimeOffset.UtcNow - this.options.CacheMaxAge)
+                        || cacheMeta.SourceLastWriteTimeUtc != sourceMeta.LastWriteTimeUtc)
+                    {
+                        return new ImageWorkerResult(sourceMeta);
+                    }
 
-                        if (cachedImage.ImageCacheResolver is null)
-                        {
-                            // Remove the null resolver from the store.
-                            CacheResolverLru.TryRemove(key);
-
-                            return new ImageWorkerResult(sourceImageMetadata);
-                        }
-
-                        // Has the cached image expired?
-                        // Or has the source image changed since the image was last cached?
-                        if (cachedImage.ImageCacheMetadata.ContentLength == 0 // Fix for old cache without length property
-                            || cachedImage.ImageCacheMetadata.CacheLastWriteTimeUtc <= (DateTimeOffset.UtcNow - this.options.CacheMaxAge)
-                            || cachedImage.ImageCacheMetadata.SourceLastWriteTimeUtc != sourceImageMetadata.LastWriteTimeUtc)
-                        {
-                            // We want to remove the resolver from the store so that the next check gets the updated file.
-                            CacheResolverLru.TryRemove(key);
-                            return new ImageWorkerResult(sourceImageMetadata);
-                        }
-
-                        // The image is cached. Return the cached image so multiple callers can write a response.
-                        return new ImageWorkerResult(sourceImageMetadata, cachedImage.ImageCacheMetadata, cachedImage.ImageCacheResolver);
-                    });
+                    // The image is cached. Return the cached image so multiple callers can write a response.
+                    return new ImageWorkerResult(sourceMeta, cacheMeta, cacheResolver);
+                });
         }
 
         private async Task SendResponseAsync(
             ImageContext imageContext,
             string key,
-            ImageCacheMetadata metadata,
+            ImageCacheMetadata cacheMeta,
             IImageCacheResolver cacheResolver)
         {
-            imageContext.ComprehendRequestHeaders(metadata.CacheLastWriteTimeUtc, metadata.ContentLength);
+            imageContext.ComprehendRequestHeaders(cacheMeta.CacheLastWriteTimeUtc, cacheMeta.ContentLength);
 
             switch (imageContext.GetPreconditionState())
             {
@@ -506,28 +470,26 @@ namespace SixLabors.ImageSharp.Web.Middleware
                 case ImageContext.PreconditionState.ShouldProcess:
                     if (imageContext.IsHeadRequest())
                     {
-                        await imageContext.SendStatusAsync(ResponseConstants.Status200Ok, metadata);
+                        await imageContext.SendStatusAsync(ResponseConstants.Status200Ok, cacheMeta);
                         return;
                     }
 
                     this.logger.LogImageServed(imageContext.GetDisplayUrl(), key);
-
-                    // When stream is null we're sending from the cache.
                     using (Stream stream = await cacheResolver.OpenReadAsync())
                     {
-                        await imageContext.SendAsync(stream, metadata);
+                        await imageContext.SendAsync(stream, cacheMeta);
                     }
 
                     return;
 
                 case ImageContext.PreconditionState.NotModified:
                     this.logger.LogImageNotModified(imageContext.GetDisplayUrl());
-                    await imageContext.SendStatusAsync(ResponseConstants.Status304NotModified, metadata);
+                    await imageContext.SendStatusAsync(ResponseConstants.Status304NotModified, cacheMeta);
                     return;
 
                 case ImageContext.PreconditionState.PreconditionFailed:
                     this.logger.LogImagePreconditionFailed(imageContext.GetDisplayUrl());
-                    await imageContext.SendStatusAsync(ResponseConstants.Status412PreconditionFailed, metadata);
+                    await imageContext.SendStatusAsync(ResponseConstants.Status412PreconditionFailed, cacheMeta);
                     return;
                 default:
                     var exception = new NotImplementedException(imageContext.GetPreconditionState().ToString());

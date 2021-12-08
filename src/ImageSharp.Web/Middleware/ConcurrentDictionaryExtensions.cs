@@ -31,7 +31,7 @@ namespace SixLabors.ImageSharp.Web.Middleware
         {
             while (true)
             {
-                if (dictionary.TryGetValue(key, out var task))
+                if (dictionary.TryGetValue(key, out Task<TValue> task))
                 {
                     return await task;
                 }
@@ -42,7 +42,7 @@ namespace SixLabors.ImageSharp.Web.Middleware
                 {
                     try
                     {
-                        var value = await valueFactory(key);
+                        TValue value = await valueFactory(key);
                         tcs.TrySetResult(value);
                         return await tcs.Task;
                     }
