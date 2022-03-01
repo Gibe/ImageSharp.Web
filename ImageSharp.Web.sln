@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.28803.452
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.32014.148
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "_root", "_root", "{C317F1B1-D75E-4C6D-83EB-80367343E0D7}"
 	ProjectSection(SolutionItems) = preProject
@@ -64,8 +64,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "samples", "samples", "{8B4A
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ImageSharp.Web.Sample", "samples\ImageSharp.Web.Sample\ImageSharp.Web.Sample.csproj", "{8F40DEC6-A97F-4002-A504-13E188665A98}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ImageSharp.Web.Providers.AWS", "src\ImageSharp.Web.Providers.AWS\ImageSharp.Web.Providers.AWS.csproj", "{28247CB1-5DE5-48E0-AF2E-B05A2E01A908}"
+EndProject
 Global
 	GlobalSection(SharedMSBuildProjectFiles) = preSolution
+		shared-infrastructure\src\SharedInfrastructure\SharedInfrastructure.projitems*{28247cb1-5de5-48e0-af2e-b05a2e01a908}*SharedItemsImports = 5
 		shared-infrastructure\src\SharedInfrastructure\SharedInfrastructure.projitems*{2f1b36e2-5d92-4442-b816-d2a978246435}*SharedItemsImports = 5
 		shared-infrastructure\src\SharedInfrastructure\SharedInfrastructure.projitems*{68a8cc40-6aed-4e96-b524-31b1158fdeea}*SharedItemsImports = 13
 		shared-infrastructure\src\SharedInfrastructure\SharedInfrastructure.projitems*{e2a545ec-b909-4ead-b95f-397f68588be3}*SharedItemsImports = 5
@@ -139,6 +142,18 @@ Global
 		{8F40DEC6-A97F-4002-A504-13E188665A98}.Release|x64.Build.0 = Release|Any CPU
 		{8F40DEC6-A97F-4002-A504-13E188665A98}.Release|x86.ActiveCfg = Release|Any CPU
 		{8F40DEC6-A97F-4002-A504-13E188665A98}.Release|x86.Build.0 = Release|Any CPU
+		{28247CB1-5DE5-48E0-AF2E-B05A2E01A908}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{28247CB1-5DE5-48E0-AF2E-B05A2E01A908}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{28247CB1-5DE5-48E0-AF2E-B05A2E01A908}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{28247CB1-5DE5-48E0-AF2E-B05A2E01A908}.Debug|x64.Build.0 = Debug|Any CPU
+		{28247CB1-5DE5-48E0-AF2E-B05A2E01A908}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{28247CB1-5DE5-48E0-AF2E-B05A2E01A908}.Debug|x86.Build.0 = Debug|Any CPU
+		{28247CB1-5DE5-48E0-AF2E-B05A2E01A908}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{28247CB1-5DE5-48E0-AF2E-B05A2E01A908}.Release|Any CPU.Build.0 = Release|Any CPU
+		{28247CB1-5DE5-48E0-AF2E-B05A2E01A908}.Release|x64.ActiveCfg = Release|Any CPU
+		{28247CB1-5DE5-48E0-AF2E-B05A2E01A908}.Release|x64.Build.0 = Release|Any CPU
+		{28247CB1-5DE5-48E0-AF2E-B05A2E01A908}.Release|x86.ActiveCfg = Release|Any CPU
+		{28247CB1-5DE5-48E0-AF2E-B05A2E01A908}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -153,6 +168,7 @@ Global
 		{04955CD1-F249-4899-9F61-6C7487BEECE1} = {B8152C86-B657-4967-B297-42F89A10D23A}
 		{2A5EF4AC-E228-42C1-970B-35630A9AF250} = {B8152C86-B657-4967-B297-42F89A10D23A}
 		{8F40DEC6-A97F-4002-A504-13E188665A98} = {8B4A805D-D780-4A18-9BDA-4D27B4BD11AA}
+		{28247CB1-5DE5-48E0-AF2E-B05A2E01A908} = {815C0625-CD3D-440F-9F80-2D83856AB7AE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {C5B38B65-A19E-4359-859C-5B2205429BD1}
